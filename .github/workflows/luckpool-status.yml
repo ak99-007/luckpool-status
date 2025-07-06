@@ -11,25 +11,35 @@ jobs:
     timeout-minutes: 2
 
     steps:
-      - name: Cek Worker Luckpool & Kirim Telegram
+      - name: Install Dependencies
         run: |
-          # === Konfigurasi Langsung di Sini ===
+          sudo apt update
+          sudo apt install -y jq curl
+
+      - name: Check Luckpool Worker Status
+        run: |
+          # === Konfigurasi ===
           WALLET="RGVmtuvrP2yX8q3U4up77CcSpkcVhp4bUG"
           TELEGRAM_TOKEN="7548058927:AAF-fL3P6W5sNxbzbmwwtsfVxPZubdIybzc"
           TELEGRAM_CHAT_ID="5763229296"
 
-          URL="https://luckpool.net/verus/stats_address?address=${WALLET}"
-          DATA=$(curl -s "$URL")
+          API_URL="https://luckpool.net/verus/api/miner/address?address=${WALLET}"
+          DATA=$(curl -s "$API_URL")
 
-          # Cek apakah response valid dan mengandung informasi worker
-          if echo "$DATA" | grep -q '"workers"'; then
-            COUNT=$(echo "$DATA" | jq '.workers | to_entries | map(select(.value.hashrate > 0)) | length')
-            DETAIL=$(echo "$DATA" | jq -r '.workers | to_entries[] | select(.value.hashrate > 0) | "\(.key): \(.value.hashrate) H/s"' | sed ':a;N;$!ba;s/\n/\n📟 /g')
+          # Cek JSON valid
+          if echo "$DATA" | jq . >/dev/null 2>&1; then
+            WORKERS=$(echo "$DATA" | jq -r '.workers | to_entries[] | "\(.key): \(.value.hashrate) H/s"' | sed ':a;N;$!ba;s/\n/\\n📟 /g')
+            COUNT=$(echo "$DATA" | jq '.workers | to_entries | length')
 
-            MESSAGE="✅ *${COUNT} Worker aktif* di Luckpool\n\n📟 ${DETAIL}\n\n👛 \`${WALLET}\`"
+            # Buat pesan
+            if [ "$COUNT" -gt 0 ]; then
+              MESSAGE="✅ *${COUNT} Worker aktif* di Luckpool:\n📟 ${WORKERS}"
+            else
+              MESSAGE="⚠️ Tidak ada worker aktif.\nWallet:\n\`${WALLET}\`"
+            fi
           else
             SHORT=$(echo "$DATA" | head -c 300 | sed 's/`/ /g')
-            MESSAGE="⚠️ *Gagal mengambil data dari Luckpool*\n\n📤 *Respons:*\n\`\`\`\n${SHORT}\n\`\`\`"
+            MESSAGE="❌ Gagal mengambil data dari Luckpool API.\n\nRespons:\n\`\`\`\n${SHORT}\n\`\`\`"
           fi
 
           # Kirim ke Telegram
