@@ -2,54 +2,59 @@ name: Telegram /status Bot (Luckpool)
 
 on:
   schedule:
-    - cron: "*/15 * * * *"          # start setiap 15 menit
-  workflow_dispatch:                # bisa dijalankan manual
+    - cron: "*/5 * * * *"  # Jalankan setiap 5 menit
+  workflow_dispatch:
 
 jobs:
   bot:
     runs-on: ubuntu-latest
-    timeout-minutes: 55             # jalankan ~55 menit lalu mati; cron berikutnya akan hidup lagi
+    timeout-minutes: 55  # Batasi 55 menit agar tidak idle terlalu lama
 
     steps:
-      - name: Install deps
+      - name: Install Dependencies
         run: |
-          sudo apt-get update -y
-          sudo apt-get install -y jq
+          sudo apt-get update
+          sudo apt-get install -y jq curl
 
-      - name: Run polling bot
-        env:
-          TG_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
-          CHAT_ID:  ${{ secrets.TELEGRAM_CHAT_ID }}
-          WALLET:   ${{ secrets.WALLET }}
+      - name: Run Telegram Bot
         run: |
+          # === 🧾 Konfigurasi Langsung di Sini ===
+          TG_TOKEN="7548058927:AAF-fL3P6W5sNxbzbmwwtsfVxPZubdIybzc"
+          CHAT_ID="5763229296"
+          WALLET="RGVmtuvrP2yX8q3U4up77CcSpkcVhp4bUG"
+          # ========================================
+
           OFFSET=0
-          until [ $SECONDS -ge 3300 ]; do   # loop ~55 menit (3300 s)
-            # Ambil update baru
-            RESP=$(curl -s "https://api.telegram.org/bot${TG_TOKEN}/getUpdates?timeout=30&offset=$OFFSET")
-            UPDATE_COUNT=$(echo "$RESP" | jq '.result | length')
+          END_TIME=$((SECONDS + 3300))  # Loop selama 55 menit (~3300 detik)
 
-            if [ "$UPDATE_COUNT" -gt 0 ]; then
-              for row in $(echo "$RESP" | jq -r '.result[] | @base64'); do
-                _jq() { echo "$row" | base64 -d | jq -r "$1"; }
-                ID=$(_jq '.update_id')
-                TEXT=$(_jq '.message.text // empty')
-                FROM=$(_jq '.message.chat.id')
+          while [ $SECONDS -lt $END_TIME ]; do
+            RESP=$(curl -s "https://api.telegram.org/bot${TG_TOKEN}/getUpdates?timeout=20&offset=$OFFSET")
+            COUNT=$(echo "$RESP" | jq '.result | length')
 
-                OFFSET=$((ID+1))   # set offset untuk next poll
+            if [ "$COUNT" -gt 0 ]; then
+              for row in $(echo "$RESP" | jq -c '.result[]'); do
+                ID=$(echo "$row" | jq '.update_id')
+                MSG_TEXT=$(echo "$row" | jq -r '.message.text // empty')
+                FROM_ID=$(echo "$row" | jq -r '.message.chat.id')
 
-                # Hanya respon jika pesan "/status" dan dari CHAT_ID yang diizinkan
-                if [ "$TEXT" = "/status" ] && [ "$FROM" = "$CHAT_ID" ]; then
-                  # hit Luckpool API
-                  JSON=$(curl -s "https://luckpool.net/verus/stats_address?address=$WALLET")
-                  if echo "$JSON" | jq -e '.workers | length>0' >/dev/null; then
-                    WORKERS=$(echo "$JSON" | jq -r '.workers[] | "\(.name): \(.hashrate) H/s"' | sed ':a;N;$!ba;s/\n/\\n/g')
-                    TOTAL=$(echo "$JSON" | jq -r '.hashrate')
-                    MSG="💠 *Luckpool Workers*\n${WORKERS}\n\n📊 *Total Hash:* ${TOTAL} H/s"
+                OFFSET=$((ID + 1))
+
+                if [ "$MSG_TEXT" = "/status" ] && [ "$FROM_ID" = "$CHAT_ID" ]; then
+                  DATA=$(curl -s "https://luckpool.net/verus/stats_address?address=$WALLET")
+                  WORKER_COUNT=$(echo "$DATA" | jq '.workers | length')
+
+                  if [ "$WORKER_COUNT" -gt 0 ]; then
+                    WORKERS=$(echo "$DATA" | jq -r '.workers[] | "\(.name): \(.hashrate) H/s"' | sed ':a;N;$!ba;s/\n/\\n/g')
+                    TOTAL=$(echo "$DATA" | jq -r '.hashrate')
+                    MESSAGE="💠 *Luckpool Workers*\n${WORKERS}\n\n📊 *Total Hashrate:* ${TOTAL} H/s"
                   else
-                    MSG="⚠️ *No active workers* for \`$WALLET\`"
+                    MESSAGE="⚠️ *No active workers* for \`$WALLET\`"
                   fi
+
                   curl -s -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
-                    -d chat_id="$CHAT_ID" -d parse_mode=Markdown -d text="$MSG" > /dev/null
+                    -d chat_id="$CHAT_ID" \
+                    -d parse_mode=Markdown \
+                    -d text="$MESSAGE" > /dev/null
                 fi
               done
             fi
