@@ -19,16 +19,16 @@ jobs:
       - name: Run Telegram Bot
         shell: bash
         run: |
-          # Konfigurasi variabel (langsung isi di sini)
+          # === Konfigurasi Variabel ===
           TG_TOKEN="7548058927:AAF-fL3P6W5sNxbzbmwwtsfVxPZubdIybzc"
           CHAT_ID="5763229296"
           WALLET="RGVmtuvrP2yX8q3U4up77CcSpkcVhp4bUG"
 
           OFFSET=0
-          END_TIME=$((SECONDS + 3300))  # 55 menit
+          END_TIME=$((SECONDS + 3300))  # Batas 55 menit
 
           while [ $SECONDS -lt $END_TIME ]; do
-            RESP=$(curl -s "https://api.telegram.org/bot${TG_TOKEN}/getUpdates?timeout=20&offset=$OFFSET")
+            RESP=$(curl -s "https://api.telegram.org/bot${TG_TOKEN}/getUpdates?timeout=20&offset=${OFFSET}")
             COUNT=$(echo "$RESP" | jq '.result | length')
 
             if [ "$COUNT" -gt 0 ]; then
@@ -39,16 +39,16 @@ jobs:
 
                 OFFSET=$((ID + 1))
 
-                if [ "$MSG_TEXT" = "/status" ] && [ "$FROM_ID" = "$CHAT_ID" ]; then
-                  DATA=$(curl -s "https://luckpool.net/verus/stats_address?address=$WALLET")
+                if [[ "$MSG_TEXT" == "/status" && "$FROM_ID" == "$CHAT_ID" ]]; then
+                  DATA=$(curl -s "https://luckpool.net/verus/stats_address?address=${WALLET}")
                   WORKER_COUNT=$(echo "$DATA" | jq '.workers | length')
 
                   if [ "$WORKER_COUNT" -gt 0 ]; then
                     WORKERS=$(echo "$DATA" | jq -r '.workers[] | "\(.name): \(.hashrate) H/s"' | sed ':a;N;$!ba;s/\n/\\n/g')
                     TOTAL=$(echo "$DATA" | jq -r '.hashrate')
-                    MESSAGE="Luckpool Workers:\n${WORKERS}\n\nTotal Hashrate: ${TOTAL} H/s"
+                    MESSAGE="💻 *Luckpool Workers:*\n${WORKERS}\n\n📊 *Total Hashrate:* ${TOTAL} H/s"
                   else
-                    MESSAGE="No active workers for wallet: $WALLET"
+                    MESSAGE="⚠️ No active workers for wallet:\n\`$WALLET\`"
                   fi
 
-                  cu
+                  curl -s -X POST "ht
